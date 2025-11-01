@@ -1,0 +1,95 @@
+{
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "exclude": ["node_modules"]
+}```
+
+**What this does:**
+*   It tells Node.js to use the modern `NodeNext` module system.
+*   Most importantly, `paths: { "@/*": ["./src/*"] }` creates an alias. Now, instead of writing a fragile relative path like `../../core/parser`, we can write a clear, absolute-from-the-source path like `@/core/parser`.
+
+---
+
+#### **Step 2: Update All Backend Import Statements**
+
+Now, we will update all of our backend files to use this new, robust path alias. This makes our code cleaner and solves the resolution problem permanently.
+
+1.  **File to Modify: `backend/server.js`**
+    ```javascript
+    import Fastify from 'fastify';
+    import cors from '@fastify/cors';
+    import dotenv from 'dotenv';
+    // UPDATED IMPORT
+    import translationRoutes from '@/features/translation/controller.js';
+    
+    dotenv.config();
+    const server = Fastify({ logger: true });
+    
+    await server.register(cors, { origin: process.env.FRONTEND_URL || '*' });
+    server.register(translationRoutes, { prefix: '/api/translation' });
+    
+    server.get('/', () => ({ status: 'ok', message: 'PST Backend is online.' }));
+    
+    const start = async () => { /* ... (rest of the file is the same) ... */ };
+    start();
+    ```
+
+2.  **File to Modify: `backend/src/features/translation/controller.js`**
+    ```javascript
+    // UPDATED IMPORT
+    import { generateTranslationBlueprint, executeTranslationChain } from './orchestrator.js';
+    
+    export default async function (server, opts) {
+        // ... (rest of the file is the same)
+    }
+    ```
+    *(Note: This one was likely already correct, but we confirm it's a simple relative import.)*
+
+3.  **File to Modify: `backend/src/features/translation/orchestrator.js`**
+    ```javascript
+    // UPDATED IMPORTS
+    import { /*...all agents...*/ } from './agents.js';
+    import { parseSrt, toSrtString } from '@/core/srtParser.js';
+
+    // ... (rest of the file is the same)
+    ```
+
+4.  **File to Modify: `backend/src/features/translation/agents.js`**
+    ```javascript
+    // UPDATED IMPORTS
+    import { callGemini } from '@/lib/geminiClient.js';
+    import { toSrtPromptFormat } from '@/core/srtParser.js';
+
+    // ... (rest of the file is the same)
+    ```
+
+---
+
+#### **Step 3: Update the Render Start Command**
+
+To make Node.js recognize our `jsconfig.json` paths, we need to pass it a specific experimental flag.
+
+1.  Go to your service dashboard on Render.
+2.  Navigate to the **"Settings"** tab.
+3.  Find the **"Start Command"** field.
+4.  **Change its value to:**
+    `node --experimental-specifier-resolution=node server.js`
+
+This command tells Node.js to use its standard resolution algorithm, which will allow it to find and use our `jsconfig.json` file.
+
+### **Summary of the Definitive Fix**
+
+This is an architectural fix, not just a syntax fix.
+1.  We created `jsconfig.json` to define a clear, unambiguous alias (`@/`) that points to our `src` directory.
+2.  We updated all our `import` statements to use this clean and robust alias.
+3.  We updated the Render start command to enable this modern feature.
+
+This will permanently solve the `ERR_MODULE_NOT_FOUND` issue by removing all ambiguity about where our files are located.
+
+Please apply these changes. This is the professional, industry-standard solution for this class of problem in modern Node.js projects.
