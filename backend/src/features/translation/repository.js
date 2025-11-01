@@ -4,8 +4,6 @@
 
 // ===== IMPORTS & DEPENDENCIES =====
 import { ObjectId } from 'mongodb';
-import { getDb } from '#lib/mongoClient.js';
-import { getPineconeIndex } from '#lib/pineconeClient.js';
 
 // ===== REPOSITORY CLASS =====
 /**
@@ -114,8 +112,24 @@ export class TranslationRepository {
     // 4. Implement robust error handling for the upsert operation.
     return Promise.resolve();
   }
-}
 
-// We no longer export a pre-made instance.
-// The instance will be created in the orchestrator/service layer
-// after a database connection has been confirmed.
+  /**
+   * Retrieves a single job document by its ID.
+   * @param {string} jobId - The ID of the job to retrieve.
+   * @returns {Promise<import('mongodb').Document | null>} The job document or null if not found.
+   */
+  async getJobById(jobId) {
+    try {
+      this.logger.info({ jobId }, 'Fetching job by ID from database.');
+      // Ensure we query by a valid ObjectId
+      const job = await this.jobsCollection.findOne({ _id: new ObjectId(jobId) });
+      if (!job) {
+        this.logger.warn({ jobId }, 'Job not found in database.');
+      }
+      return job;
+    } catch (error) {
+      this.logger.error({ error, jobId }, 'Error fetching job from database.');
+      throw error;
+    }
+  }
+}
