@@ -1,0 +1,28 @@
+# ===== DOCKER IGNORE CONFIGURATION =====
+
+# Ignore node_modules, as they are installed fresh inside the container.
+node_modules
+
+# Ignore local environment files. Secrets are injected by the hosting environment.
+.env
+.env.*
+.env.local
+
+# Ignore logs and temporary development files.
+npm-debug.log*
+yarn-error.log
+*.log
+
+# Ignore OS-specific metadata files.
+.DS_Store
+Thumbs.db
+
+# Ignore development tooling configuration files.
+.vscode/
+.idea/
+.eslintrc.cjs
+.prettierrc
+nodemon.json
+
+# Ignore the git directory.
+.git
