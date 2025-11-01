@@ -1,7 +1,6 @@
-// ===== PRODUCTION-READY TRANSLATION CONTROLLER =====
-// This file defines the API routes for the translation feature.
-// It acts as the Composition Root, instantiating and wiring together
-// all the necessary services (repository, agents, orchestrator) for this feature.
+// ===== DEVELOPMENT/DEBUG TRANSLATION CONTROLLER =====
+// This file is refactored to use our application-wide Zod validation strategy
+// and to correctly propagate the request-specific, contextual logger for end-to-end observability.
 
 // ===== IMPORTS & DEPENDENCIES =====
 import { getDb } from '#lib/mongoClient.js';
@@ -10,34 +9,8 @@ import { callGemini } from '#lib/geminiClient.js';
 import { TranslationRepository } from './repository.js';
 import { AgentService } from './agents.js';
 import { TranslationOrchestrator } from './orchestrator.js';
-
-// ===== ROUTE SCHEMAS =====
-// Centralizing schemas keeps the route definitions clean.
-const schemas = {
-  blueprintBody: {
-    type: 'object',
-    required: ['subtitleContent', 'settings'],
-    properties: {
-      subtitleContent: { type: 'string', minLength: 1, description: 'The full SRT or plain text content to be translated.' },
-      settings: { 
-        type: 'object', 
-        required: ['tone'], 
-        properties: { 
-          tone: { type: 'string', description: 'The desired tone for the translation (e.g., formal, witty, academic).' } 
-        }
-      },
-    },
-  },
-  executeBody: {
-    type: 'object',
-    required: ['jobId', 'settings', 'confirmedBlueprint'],
-    properties: {
-      jobId: { type: 'string', description: 'The unique ID of the translation job.' },
-      settings: { type: 'object', description: 'The same settings object used for blueprint generation.' },
-      confirmedBlueprint: { type: 'object', description: 'The user-approved blueprint, possibly with modifications.' },
-    },
-  },
-};
+import { translationSchemas } from './translation.schemas.js'; // Import our new Zod schemas
+import { zodToJsonSchema } from 'zod-to-json-schema'; // Helper to convert Zod to JSON Schema
 
 // ===== CONTROLLER DEFINITION =====
 /**
@@ -48,51 +21,79 @@ const schemas = {
 export default async function (server, opts) {
   
   // --- COMPOSITION ROOT ---
-  // This is the single place where we create and connect our feature's services.
-  // This pattern is the essence of Dependency Injection and Clean Architecture.
+  // This composition remains the same, but the logger being passed here is the GLOBAL logger.
+  // This is fine for instantiation, but for request handling, we MUST use the request-specific logger.
   
-  const logger = server.log; // Use Fastify's built-in request-scoped logger.
-
   // 1. Create the data access layer.
   const repository = new TranslationRepository({ 
     db: getDb(), 
     vectorIndex: getPineconeIndex(), 
-    logger,
+    logger: server.log, // Global logger for setup-time logging
   });
 
   // 2. Create the AI agent service layer.
   const agentService = new AgentService({
-    geminiClient: callGemini, // Inject the actual Gemini API call function.
-    logger,
+    geminiClient: callGemini,
+    logger: server.log,
   });
 
-  // 3. Create the core business logic layer, injecting the repository and agent service.
+  // 3. Create the core business logic layer, injecting dependencies.
   const orchestrator = new TranslationOrchestrator({ 
     repository, 
     agentService,
-    logger,
+    logger: server.log,
   });
   
   // --- ROUTE DEFINITIONS ---
 
-  server.post('/blueprint', { schema: { body: schemas.blueprintBody } }, async (request, reply) => {
-    // No try/catch needed. Our global handler in `app.js` will manage any errors.
-    const { subtitleContent, settings } = request.body;
-    request.log.info('Blueprint generation request received.');
+  server.post(
+    '/blueprint', 
+    { 
+      schema: { 
+        // We convert our Zod schema into the JSON Schema that Fastify understands.
+        body: zodToJsonSchema(translationSchemas.blueprintBody, 'blueprintBodySchema'),
+      },
+    }, 
+    async (request, reply) => {
+      // Any errors thrown from here onwards will be caught by our global handler.
+      const { subtitleContent, settings } = request.body;
+      
+      // CRITICAL: We use request.log here, which has the unique traceId.
+      request.log.info('Blueprint generation request received.');
     
-    // Delegate all complex work to the orchestrator.
-    const result = await orchestrator.generateTranslationBlueprint(subtitleContent, settings);
+      // Pass the contextual logger down into the business logic layer.
+      const result = await orchestrator.generateTranslationBlueprint(
+        subtitleContent, 
+        settings, 
+        request.log // <-- CONTEXTUAL LOGGER INJECTION
+      );
     
-    // Fastify handles the 200 OK response and JSON serialization.
-    return result;
-  });
+      // Fastify handles the 200 OK and serialization.
+      return result;
+    }
+  );
 
-  server.post('/execute', { schema: { body: schemas.executeBody } }, async (request, reply) => {
-    const { jobId, settings, confirmedBlueprint } = request.body;
-    request.log.info({ jobId }, 'Translation execution request received.');
+  server.post(
+    '/execute', 
+    { 
+      schema: { 
+        body: zodToJsonSchema(translationSchemas.executeBody, 'executeBodySchema'),
+      },
+    }, 
+    async (request, reply) => {
+      const { jobId, settings, confirmedBlueprint } = request.body;
+      
+      request.log.info({ jobId }, 'Translation execution request received.');
     
-    const result = await orchestrator.executeTranslationChain(jobId, confirmedBlueprint, settings);
+      // Pass the contextual logger down for this request as well.
+      const result = await orchestrator.executeTranslationChain(
+        jobId, 
+        confirmedBlueprint, 
+        settings,
+        request.log // <-- CONTEXTUAL LOGGER INJECTION
+      );
     
-    return result;
-  });
+      return result;
+    }
+  );
 }
