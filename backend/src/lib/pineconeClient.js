@@ -1,81 +1,67 @@
-// ===== PRODUCTION-READY MONGO CLIENT (MANAGED SINGLETON) =====
-// This module manages a single, persistent connection to MongoDB.
-// It ensures the connection is established on startup, can be shared across
-// the application, and is closed gracefully on shutdown.
+// ===== PRODUCTION-READY PINECONE CLIENT (MANAGED SINGLETON) =====
+// This module manages a single, reusable reference to a Pinecone index.
+// It initializes on startup and provides a getter for other application parts.
 
 // ===== IMPORTS & DEPENDENCIES =====
-import { MongoClient } from 'mongodb';
+import { Pinecone } from '@pinecone-database/pinecone';
 import config from '#config'; // Use our centralized, validated config.
 
 // ===== MODULE-LEVEL CLIENT STATE =====
-// These variables hold the singleton instances for the client and the database.
-// They are defined at the module level to be accessible by all exported functions.
-let client;
-let dbInstance;
+// This variable will hold the singleton instance of the Pinecone index client.
+let pineconeIndex = null;
 
 // ===== CONNECTION LOGIC =====
 /**
- * Establishes a connection to the MongoDB server.
- * This function is idempotent; it will not create a new connection if one already exists.
- * It initializes the singleton client and dbInstance.
+ * Initializes the Pinecone client and gets a reference to the specified index.
+ * This function is idempotent and will not re-initialize if already connected.
  * @param {object} logger - The Pino logger instance.
  */
-export async function connectToMongo(logger) {
-  if (dbInstance) {
-    logger.info('MongoDB connection already established. Skipping connection.');
+export async function connectToPinecone(logger) {
+  if (pineconeIndex) {
+    logger.info('Pinecone index reference already established. Skipping initialization.');
     return;
   }
 
   try {
-    logger.info('Initializing MongoDB client and connecting...');
-    
-    // Initialize the client with the URI from our central config.
-    // The validation for MONGO_URI is now handled in the config module.
-    client = new MongoClient(config.MONGO_URI);
+    logger.info('Initializing Pinecone client...');
 
-    await client.connect();
+    // The validation for these keys is now handled in our central config module.
+    const pinecone = new Pinecone({ apiKey: config.PINECONE_API_KEY });
     
-    // The client.db() method without arguments uses the default database
-    // specified in the connection string URI.
-    dbInstance = client.db(); 
+    pineconeIndex = pinecone.index(config.PINECONE_INDEX_NAME);
     
-    logger.info('Successfully connected to MongoDB.');
+    logger.info(`Successfully initialized Pinecone client for index [${config.PINECONE_INDEX_NAME}].`);
   } catch (err) {
-    logger.fatal({ err }, 'Fatal Error: Failed to connect to MongoDB.');
-    // A failed database connection is a critical error; the application cannot run without it.
+    logger.fatal({ err }, 'Fatal Error: Failed to initialize Pinecone client.');
+    // A failed Pinecone connection is critical for the application's core functionality.
     process.exit(1);
   }
 }
 
 /**
- * Provides access to the established database instance.
- * This is the "public API" for other parts of the application (e.g., repositories)
- * to interact with the database.
- * @returns {import('mongodb').Db} The MongoDB database instance.
- * @throws {Error} If the database connection has not been established yet.
+ * Provides access to the established Pinecone index instance.
+ * @returns {import('@pinecone-database/pinecone').Index} The Pinecone index instance.
+ * @throws {Error} If the Pinecone index has not been initialized yet.
  */
-export function getDb() {
-  if (!dbInstance) {
-    throw new Error('Database not connected. Ensure connectToMongo() is called successfully on application startup.');
+export function getPineconeIndex() {
+  if (!pineconeIndex) {
+    throw new Error('Pinecone index not initialized. Ensure connectToPinecone() is called successfully on application startup.');
   }
-  return dbInstance;
+  return pineconeIndex;
 }
 
 /**
- * Closes the MongoDB connection.
- * This function is essential for the graceful shutdown process.
+ * Placeholder for graceful shutdown. The Pinecone V2 client is stateless (uses HTTPS REST APIs),
+ * so there is no persistent connection to close. This function exists to maintain a consistent
+ * shutdown pattern with other stateful clients like MongoDB.
  * @param {object} logger - The Pino logger instance.
  */
-export async function closeMongoConnection(logger) {
-  if (client) {
-    try {
-      logger.info('Closing MongoDB connection...');
-      await client.close();
-      logger.info('MongoDB connection closed successfully.');
-    } catch (err) {
-      logger.error({ err }, 'Error closing MongoDB connection.');
-    }
+export async function closePineconeConnection(logger) {
+  if (pineconeIndex) {
+    logger.info('Pinecone client is stateless; no connection to close. Shutdown step complete.');
   } else {
-    logger.warn('Attempted to close MongoDB connection, but no client was initialized.');
+    logger.warn('Attempted to close Pinecone connection, but no client was initialized.');
   }
+  // Return a resolved promise to maintain an async signature.
+  return Promise.resolve();
 }
