@@ -1,10 +1,20 @@
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from '@google/generative-ai';
 
-// Initialize the Gemini client with the API key from environment variables
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+// --- ROBUST API KEY CHECK (THE FIX) ---
+// Get the key from the environment.
+const apiKey = process.env.GEMINI_API_KEY;
 
-// Define standard safety settings to be reused by all API calls.
-// This is a professional practice to ensure consistent behavior.
+// Check if the key is missing. If so, throw an immediate, clear error.
+// This will provide a much better error message in the logs than a generic crash.
+if (!apiKey) {
+  throw new Error("FATAL ERROR: GEMINI_API_KEY environment variable is not set. The application cannot start.");
+}
+// ---
+
+// Initialize the Gemini client with the validated API key
+const genAI = new GoogleGenerativeAI(apiKey);
+
+// Define standard safety settings
 const safetySettings = [
   { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
   { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
@@ -24,7 +34,6 @@ export async function callGemini(prompt, expectJson = false) {
       model: "gemini-1.5-pro-latest",
       generationConfig: {
         temperature: 0.5,
-        // If we expect a JSON object, we tell the model to output it in that format.
         ...(expectJson && { responseMimeType: 'application/json' }),
       },
       safetySettings,
@@ -38,7 +47,6 @@ export async function callGemini(prompt, expectJson = false) {
 
   } catch (error) {
     console.error("Gemini API Call Error:", error);
-    // This ensures that if the API call fails, our application has a clear error to handle.
     throw new Error("Failed to communicate with the Gemini API.");
   }
 }
