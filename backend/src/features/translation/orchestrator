@@ -7,7 +7,7 @@ import {
   agent_qaBatch,
   agent_phantomSync
 } from './agents.js';
-import { parseSrt, toSrtString } from '../../core/srtParser.js';
+import { parseSrt, toSrtString } from '#core/srtParser.js';
 
 const LINES_PER_BATCH = 25; // A configurable constant for batch size
 
