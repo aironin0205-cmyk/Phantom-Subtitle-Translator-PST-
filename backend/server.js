@@ -1,6 +1,7 @@
 import Fastify from 'fastify';
 import cors from 'fastify-cors';
 import dotenv from 'dotenv';
+// CORRECTED IMPORT PATH: We start with './src' which is relative to this file's location.
 import translationRoutes from './src/features/translation/controller.js';
 
 // Load environment variables from a .env file into process.env
