@@ -1,0 +1,105 @@
+import {
+  agent_extractKeywords,
+  agent_groundTranslations,
+  agent_assembleBlueprint,
+  agent_transcreateBatch,
+  agent_editBatch,
+  agent_qaBatch,
+  agent_phantomSync
+} from './agents.js';
+import { parseSrt, toSrtString } from '../../core/srtParser.js';
+
+const LINES_PER_BATCH = 25; // A configurable constant for batch size
+
+/**
+ * Orchestrates the Phase 1 analysis to generate the interactive blueprint.
+ * @param {string} subtitleContent The raw SRT or text content.
+ * @param {object} settings User-defined settings, like tone.
+ * @returns {Promise<object>} The generated blueprint JSON.
+ */
+export async function generateTranslationBlueprint(subtitleContent, settings) {
+  console.log("--- Orchestrator: Starting Blueprint Generation ---");
+
+  // Determine if the input is SRT or plain text for analysis.
+  // A simple check for the SRT timestamp arrow is a reliable heuristic.
+  const isSrtMode = subtitleContent.includes('-->');
+  const textToAnalyze = isSrtMode 
+    ? parseSrt(subtitleContent).map(line => line.text).join('\n')
+    : subtitleContent;
+
+  // Agent 1: Extract Keywords
+  console.log("Orchestrator: Calling Agent 1 (Extract Keywords)...");
+  const { keywords } = await agent_extractKeywords(textToAnalyze);
+  if (!keywords || keywords.length === 0) {
+      console.log("Orchestrator: No keywords found. Proceeding with basic blueprint.");
+      // Handle the case where no special terms are found, a common scenario.
+  }
+
+  // Agent 2: Ground Translations
+  console.log("Orchestrator: Calling Agent 2 (Ground Translations)...");
+  const { grounded_keywords } = await agent_groundTranslations(keywords);
+
+  // Agent 3: Assemble the final blueprint
+  console.log("Orchestrator: Calling Agent 3 (Assemble Blueprint)...");
+  const blueprint = await agent_assembleBlueprint(textToAnalyze, settings.tone, grounded_keywords);
+  
+  console.log("--- Orchestrator: Blueprint Generation Complete ---");
+  return blueprint;
+}
+
+/**
+ * Orchestrates the Phase 2 translation pipeline after the user confirms the blueprint.
+ * @param {string} subtitleContent The original raw SRT content.
+ * @param {object} settings User-defined settings.
+ * @param {object} confirmedBlueprint The user-approved (and possibly modified) blueprint.
+ * @returns {Promise<object>} An object containing the final SRT string and any sync suggestions.
+ */
+export async function executeTranslationChain(subtitleContent, settings, confirmedBlueprint) {
+  console.log("--- Orchestrator: Starting Post-Blueprint Translation Chain ---");
+  const srtLines = parseSrt(subtitleContent);
+
+  // Divide the full subtitle file into manageable batches.
+  const batches = [];
+  for (let i = 0; i < srtLines.length; i += LINES_PER_BATCH) {
+      batches.push(srtLines.slice(i, i + LINES_PER_BATCH));
+  }
+
+  let finalTranslatedSrtLines = [];
+  let syncSuggestions = [];
+  let previousContext = ''; // Context from the previously translated batch
+
+  for (let i = 0; i < batches.length; i++) {
+    const batch = batches[i];
+    console.log(`Orchestrator: Processing Batch ${i + 1} of ${batches.length}...`);
+
+    // The sequential chain of agents for each batch
+    const initialTranslation = await agent_transcreateBatch(batch, previousContext, confirmedBlueprint, settings.tone);
+    const editedTranslation = await agent_editBatch(batch, initialTranslation, confirmedBlueprint, settings.tone);
+    const qaTranslation = await agent_qaBatch(batch, editedTranslation, confirmedBlueprint, settings.tone);
+    const syncedTranslationText = await agent_phantomSync(batch, qaTranslation);
+
+    // Process the final output for this batch
+    const syncedLines = syncedTranslationText.trim().split('\n');
+    for (let j = 0; j < batch.length; j++) {
+        if (syncedLines[j]) {
+            const translatedLine = { ...batch[j], translatedText: syncedLines[j] };
+            finalTranslatedSrtLines.push(translatedLine);
+            // If Phantom Sync made a change, record it for the frontend.
+            if (syncedLines[j].includes('[PS Sync:')) {
+                syncSuggestions.push({
+                    sequence: batch[j].sequence,
+                    suggestion: syncedLines[j]
+                });
+            }
+        }
+    }
+    // Update the context for the next batch to ensure smooth transitions.
+    previousContext = finalTranslatedSrtLines.slice(-5).map(l => l.translatedText).join('\n');
+  }
+
+  console.log("--- Orchestrator: Translation Chain Complete ---");
+  return {
+      finalSrt: toSrtString(finalTranslatedSrtLines),
+      syncSuggestions: syncSuggestions
+  };
+}
