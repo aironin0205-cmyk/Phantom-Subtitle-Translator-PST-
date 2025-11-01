@@ -1,0 +1,24 @@
+/* This imports the three main layers of Tailwind CSS. */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Here, we define the base styles for our application's body. */
+@layer base {
+  body {
+    /* Set the default font for the entire UI to our chosen professional font, Inter. */
+    font-family: 'Inter', sans-serif;
+    /* Define the dark, slate-colored background. */
+    background-color: #020617; /* bg-slate-950 */
+    /* Set the default text color to a light slate for high contrast and readability. */
+    color: #cbd5e1; /* text-slate-300 */
+    /* Enable font anti-aliasing for smoother, more professional-looking text. */
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+
+    /* A performance-optimized static background glow for a subtle, premium feel. */
+    background-image: radial-gradient(circle at 15% 25%, rgba(6, 182, 212, 0.15) 0%, rgba(6, 182, 212, 0) 40%),
+                      radial-gradient(circle at 85% 65%, rgba(192, 132, 252, 0.1) 0%, rgba(192, 132, 252, 0) 50%);
+    background-attachment: fixed;
+  }
+}
