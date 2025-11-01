@@ -16,9 +16,9 @@
   },
   "imports": {
     "#config": "./src/config/index.js",
-    "#core/*": "./src/core/*",
-    "#features/*": "./src/features/*",
-    "#lib/*": "./src/lib/*"
+    "#core/*": "./src/core/*.js",
+    "#features/*": "./src/features/*.js",
+    "#lib/*": "./src/lib/*.js"
   },
   "dependencies": {
     "@fastify/cors": "^9.0.1",
