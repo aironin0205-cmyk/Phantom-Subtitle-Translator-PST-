@@ -1,24 +1,30 @@
 // ===== PRODUCTION-READY TRANSLATION CONTROLLER =====
 // This file defines the API routes for the translation feature.
 // It acts as the Composition Root, instantiating and wiring together
-// all the necessary services (repository, orchestrator) for this feature.
+// all the necessary services (repository, agents, orchestrator) for this feature.
 
 // ===== IMPORTS & DEPENDENCIES =====
 import { getDb } from '#lib/mongoClient.js';
 import { getPineconeIndex } from '#lib/pineconeClient.js';
+import { callGemini } from '#lib/geminiClient.js';
 import { TranslationRepository } from './repository.js';
+import { AgentService } from './agents.js';
 import { TranslationOrchestrator } from './orchestrator.js';
 
 // ===== ROUTE SCHEMAS =====
-// Grouping schemas makes the controller code cleaner and more organized.
+// Centralizing schemas keeps the route definitions clean.
 const schemas = {
   blueprintBody: {
     type: 'object',
     required: ['subtitleContent', 'settings'],
     properties: {
-      subtitleContent: { type: 'string', minLength: 1 },
+      subtitleContent: { type: 'string', minLength: 1, description: 'The full SRT or plain text content to be translated.' },
       settings: { 
-        type: 'object', required: ['tone'], properties: { tone: { type: 'string' } }
+        type: 'object', 
+        required: ['tone'], 
+        properties: { 
+          tone: { type: 'string', description: 'The desired tone for the translation (e.g., formal, witty, academic).' } 
+        }
       },
     },
   },
@@ -26,54 +32,58 @@ const schemas = {
     type: 'object',
     required: ['jobId', 'settings', 'confirmedBlueprint'],
     properties: {
-      jobId: { type: 'string' },
-      settings: { type: 'object' },
-      confirmedBlueprint: { type: 'object' },
+      jobId: { type: 'string', description: 'The unique ID of the translation job.' },
+      settings: { type: 'object', description: 'The same settings object used for blueprint generation.' },
+      confirmedBlueprint: { type: 'object', description: 'The user-approved blueprint, possibly with modifications.' },
     },
   },
 };
 
 // ===== CONTROLLER DEFINITION =====
 /**
+ * Registers the translation feature's routes and services with the Fastify server.
  * @param {import('fastify').FastifyInstance} server
  * @param {object} opts
  */
 export default async function (server, opts) {
   
   // --- COMPOSITION ROOT ---
-  // Here we instantiate and wire together the services for the translation feature.
-  // This is the core of Dependency Injection.
+  // This is the single place where we create and connect our feature's services.
+  // This pattern is the essence of Dependency Injection and Clean Architecture.
   
-  // 1. Get database connections, which are safely established by now.
-  const db = getDb();
-  const vectorIndex = getPineconeIndex();
+  const logger = server.log; // Use Fastify's built-in request-scoped logger.
 
-  // 2. Create the repository instance, injecting its dependencies.
+  // 1. Create the data access layer.
   const repository = new TranslationRepository({ 
-    db, 
-    vectorIndex, 
-    logger: server.log // Use Fastify's logger.
+    db: getDb(), 
+    vectorIndex: getPineconeIndex(), 
+    logger,
   });
 
-  // 3. Create the orchestrator instance, injecting the repository.
+  // 2. Create the AI agent service layer.
+  const agentService = new AgentService({
+    geminiClient: callGemini, // Inject the actual Gemini API call function.
+    logger,
+  });
+
+  // 3. Create the core business logic layer, injecting the repository and agent service.
   const orchestrator = new TranslationOrchestrator({ 
     repository, 
-    logger: server.log 
+    agentService,
+    logger,
   });
   
   // --- ROUTE DEFINITIONS ---
 
   server.post('/blueprint', { schema: { body: schemas.blueprintBody } }, async (request, reply) => {
-    // Note: No more try/catch block.
-    // Our global error handler in app.js will catch any exceptions thrown
-    // from the orchestrator and format a safe 500 response. This keeps the controller lean.
+    // No try/catch needed. Our global handler in `app.js` will manage any errors.
     const { subtitleContent, settings } = request.body;
     request.log.info('Blueprint generation request received.');
     
-    // Delegate the core logic to the orchestrator instance.
+    // Delegate all complex work to the orchestrator.
     const result = await orchestrator.generateTranslationBlueprint(subtitleContent, settings);
     
-    // Fastify automatically handles JSON serialization and sends a 200 OK.
+    // Fastify handles the 200 OK response and JSON serialization.
     return result;
   });
 
@@ -81,7 +91,6 @@ export default async function (server, opts) {
     const { jobId, settings, confirmedBlueprint } = request.body;
     request.log.info({ jobId }, 'Translation execution request received.');
     
-    // Delegate to the orchestrator.
     const result = await orchestrator.executeTranslationChain(jobId, confirmedBlueprint, settings);
     
     return result;
