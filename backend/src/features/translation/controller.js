@@ -1,14 +1,18 @@
-// ===== IMPORTS & DEPENDENCIES =====
-import { generateTranslationBlueprint, executeTranslationChain } from './orchestrator.js';
+// ===== PRODUCTION-READY TRANSLATION CONTROLLER =====
+// This file defines the API routes for the translation feature.
+// It acts as the Composition Root, instantiating and wiring together
+// all the necessary services (repository, orchestrator) for this feature.
 
-// ===== CONTROLLER DEFINITION =====
-/**
- * @param {import('fastify').FastifyInstance} server
- * @param {object} opts
- */
-export default async function (server, opts) {
-  
-  const blueprintBodySchema = {
+// ===== IMPORTS & DEPENDENCIES =====
+import { getDb } from '#lib/mongoClient.js';
+import { getPineconeIndex } from '#lib/pineconeClient.js';
+import { TranslationRepository } from './repository.js';
+import { TranslationOrchestrator } from './orchestrator.js';
+
+// ===== ROUTE SCHEMAS =====
+// Grouping schemas makes the controller code cleaner and more organized.
+const schemas = {
+  blueprintBody: {
     type: 'object',
     required: ['subtitleContent', 'settings'],
     properties: {
@@ -17,9 +21,8 @@ export default async function (server, opts) {
         type: 'object', required: ['tone'], properties: { tone: { type: 'string' } }
       },
     },
-  };
-
-  const executeBodySchema = {
+  },
+  executeBody: {
     type: 'object',
     required: ['jobId', 'settings', 'confirmedBlueprint'],
     properties: {
@@ -27,37 +30,60 @@ export default async function (server, opts) {
       settings: { type: 'object' },
       confirmedBlueprint: { type: 'object' },
     },
-  };
+  },
+};
 
-  server.post('/blueprint', { schema: { body: blueprintBodySchema } }, async (request, reply) => {
-    try {
-      const { subtitleContent, settings } = request.body;
-      request.log.info('Blueprint generation request received.');
-      const result = await generateTranslationBlueprint(request.log, subtitleContent, settings);
-      return result;
-    } catch (error) {
-      request.log.error({ err: error, cause: error.cause }, 'Error in /blueprint controller');
-      const isProduction = process.env.NODE_ENV === 'production';
-      const errorMessage = isProduction 
-        ? 'An internal server error occurred while generating the blueprint.' 
-        : `Blueprint generation failed: ${error.message}`;
-      return reply.code(500).send({ error: errorMessage });
-    }
+// ===== CONTROLLER DEFINITION =====
+/**
+ * @param {import('fastify').FastifyInstance} server
+ * @param {object} opts
+ */
+export default async function (server, opts) {
+  
+  // --- COMPOSITION ROOT ---
+  // Here we instantiate and wire together the services for the translation feature.
+  // This is the core of Dependency Injection.
+  
+  // 1. Get database connections, which are safely established by now.
+  const db = getDb();
+  const vectorIndex = getPineconeIndex();
+
+  // 2. Create the repository instance, injecting its dependencies.
+  const repository = new TranslationRepository({ 
+    db, 
+    vectorIndex, 
+    logger: server.log // Use Fastify's logger.
   });
 
-  server.post('/execute', { schema: { body: executeBodySchema } }, async (request, reply) => {
-    try {
-      const { jobId, settings, confirmedBlueprint } = request.body;
-      request.log.info({ jobId }, 'Translation execution request received.');
-      const result = await executeTranslationChain(request.log, jobId, confirmedBlueprint, settings);
-      return result;
-    } catch (error) {
-      request.log.error({ err: error, cause: error.cause }, 'Error in /execute controller');
-      const isProduction = process.env.NODE_ENV === 'production';
-      const errorMessage = isProduction 
-        ? 'An internal server error occurred during translation execution.'
-        : `Translation execution failed: ${error.message}`;
-      return reply.code(500).send({ error: errorMessage });
-    }
+  // 3. Create the orchestrator instance, injecting the repository.
+  const orchestrator = new TranslationOrchestrator({ 
+    repository, 
+    logger: server.log 
+  });
+  
+  // --- ROUTE DEFINITIONS ---
+
+  server.post('/blueprint', { schema: { body: schemas.blueprintBody } }, async (request, reply) => {
+    // Note: No more try/catch block.
+    // Our global error handler in app.js will catch any exceptions thrown
+    // from the orchestrator and format a safe 500 response. This keeps the controller lean.
+    const { subtitleContent, settings } = request.body;
+    request.log.info('Blueprint generation request received.');
+    
+    // Delegate the core logic to the orchestrator instance.
+    const result = await orchestrator.generateTranslationBlueprint(subtitleContent, settings);
+    
+    // Fastify automatically handles JSON serialization and sends a 200 OK.
+    return result;
+  });
+
+  server.post('/execute', { schema: { body: schemas.executeBody } }, async (request, reply) => {
+    const { jobId, settings, confirmedBlueprint } = request.body;
+    request.log.info({ jobId }, 'Translation execution request received.');
+    
+    // Delegate to the orchestrator.
+    const result = await orchestrator.executeTranslationChain(jobId, confirmedBlueprint, settings);
+    
+    return result;
   });
 }
