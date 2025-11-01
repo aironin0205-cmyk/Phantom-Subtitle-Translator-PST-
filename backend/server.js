@@ -1,27 +1,34 @@
 import Fastify from 'fastify';
-// CORRECTED IMPORT for the new package
 import cors from '@fastify/cors';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
-// This robust path resolution is still best practice, so we will keep it.
+// --- ROBUST PATH RESOLUTION (Still essential) ---
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
+// --- STATIC IMPORT USING ABSOLUTE PATH ---
+// We construct the absolute path and then use it in a standard import statement.
+// Note: We must use the 'file://' protocol for absolute path imports in ES Modules.
+const controllerPath = 'file://' + join(__dirname, 'src', 'features', 'translation', 'controller.js');
+import translationRoutes from controllerPath;
+// ---
+
+// Load environment variables
 dotenv.config();
 
 const server = Fastify({
   logger: true,
 });
 
-// Register the new CORS plugin
+// Register the CORS plugin
 await server.register(cors, {
   origin: process.env.FRONTEND_URL || '*',
 });
 
-// Dynamically register our feature routes
-server.register(import(join(__dirname, 'src', 'features', 'translation', 'controller.js')), { 
+// Register our statically imported feature routes
+server.register(translationRoutes, { 
   prefix: '/api/translation' 
 });
 
