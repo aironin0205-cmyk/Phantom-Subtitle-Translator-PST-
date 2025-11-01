@@ -33,10 +33,10 @@ const configSchema = z.object({
   PINECONE_INDEX_NAME: z.string().default('pst-translations'),
   GEMINI_API_KEY: z.string().min(1, 'GEMINI_API_KEY is a required environment variable.'),
 
-  // --- Gemini Model & Retry Configuration ---
-  GEMINI_BLUEPRINT_MODEL: z.string().default('gemini-1.5-pro-latest'),
-  GEMINI_TRANSLATION_MODEL: z.string().default('gemini-1.5-pro-latest'),
-  GEMINI_SYNC_MODEL: z.string().default('gemini-1.5-flash-latest'),
+  // --- Gemini Model & Retry Configuration (CORRECTED MODELS) ---
+  GEMINI_BLUEPRINT_MODEL: z.string().default('gemini-2.5-pro-latest'),
+  GEMINI_TRANSLATION_MODEL: z.string().default('gemini-2.5-pro-latest'),
+  GEMINI_SYNC_MODEL: z.string().default('gemini-2.5-flash-latest'),
   GEMINI_MAX_RETRIES: z.coerce.number().int().nonnegative().default(3),
   GEMINI_BACKOFF_MS: z.coerce.number().int().positive().default(200),
 
