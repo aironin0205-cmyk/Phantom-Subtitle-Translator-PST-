@@ -1,0 +1,51 @@
+// ===== NEW FILE: src/utils/errors.js =====
+// This file centralizes our custom error classes, promoting consistency.
+
+/**
+ * @class ApiError
+ * @extends {Error}
+ * @description A custom error class for handling API-specific errors with HTTP status codes.
+ */
+export class ApiError extends Error {
+  /**
+   * @param {number} httpStatus - The HTTP status code for the error.
+   * @param {string} message - The error message.
+   * @param {boolean} [isOperational=true] - A flag to distinguish programmer errors from operational errors.
+   * @param {string} [stack=''] - Optional stack trace.
+   */
+  constructor(httpStatus, message, isOperational = true, stack = '') {
+    super(message);
+    this.httpStatus = httpStatus;
+    this.isOperational = isOperational;
+    if (stack) {
+      this.stack = stack;
+    } else {
+      Error.captureStackTrace(this, this.constructor);
+    }
+  }
+}
+
+// Common error types for convenience
+export class BadRequestError extends ApiError {
+  constructor(message = 'Bad Request') {
+    super(400, message);
+  }
+}
+
+export class UnauthorizedError extends ApiError {
+  constructor(message = 'Unauthorized') {
+    super(401, message);
+  }
+}
+
+export class ForbiddenError extends ApiError {
+  constructor(message = 'Forbidden') {
+    super(403, message);
+  }
+}
+
+export class NotFoundError extends ApiError {
+  constructor(message = 'Not Found') {
+    super(404, message);
+  }
+}
