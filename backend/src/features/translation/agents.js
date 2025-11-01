@@ -1,5 +1,6 @@
-import { callGemini } from '../../lib/geminiClient.js';
-import { toSrtPromptFormat } from '../../core/srtParser.js';
+// UPDATED IMPORTS using the '#' alias system
+import { callGemini } from '#lib/geminiClient.js';
+import { toSrtPromptFormat } from '#core/srtParser.js';
 
 // ===== BLUEPRINT GENERATION AGENTS (PHASE 1) =====
 
