@@ -48,6 +48,8 @@ class TranslationRepository {
   
   async upsertGlossaryVectors(jobId, glossary) {
     // This is a placeholder for the vector embedding and upsert logic.
+    // In a real implementation, you would generate embeddings for each term
+    // and then upsert them to the vector index.
     console.log('Placeholder: Upserting glossary vectors to Pinecone.', { jobId, glossaryCount: glossary.length });
   }
 }
