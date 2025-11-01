@@ -1,3 +1,4 @@
+// CORRECTED IMPORT PATH: We use './' to signify the current directory.
 import { generateTranslationBlueprint, executeTranslationChain } from './orchestrator.js';
 
 /**
