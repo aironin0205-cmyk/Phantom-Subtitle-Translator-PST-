@@ -4,42 +4,42 @@
   "description": "The AI engine for the Phantom Subtitle Translator platform.",
   "main": "server.js",
   "type": "module",
-  "engines": { "node": ">=18.0.0" },
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "scripts": {
     "start": "cross-env NODE_ENV=production node server.js",
-    "dev": "cross-env NODE_ENV=development nodemon server.js"
-    // ... lint scripts ...
+    "dev": "cross-env NODE_ENV=development nodemon server.js",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write \"**/*.js\""
   },
-  // THIS IS THE RUNTIME CONFIGURATION FOR NODE.JS
   "imports": {
-    "#core/*": ["./src/core/*.js"],
-    "#features/*": ["./src/features/*.js"],
-    "#lib/*": ["./src/lib/*.js"],
+    "#core/*": "./src/core/*.js",
+    "#features/*": "./src/features/*.js",
+    "#lib/*": "./src/lib/*.js",
     "#config": "./src/config/index.js"
   },
-  "dependencies": { /* ... */ },
-  "devDependencies": { /* ... */ }
-}```
-
-#### **Step 3: Ensure Your Render Start Command is Simple**
-
-Your Render "Start Command" should be clean and simple. You do not need any experimental flags.
-
-**Correct Render Start Command:** `npm start`
-(This will execute the `"start": "cross-env NODE_ENV=production node server.js"` script from your `package.json`).
-
-### **Summary of the Definitive Architecture**
-
-This is the professional, industry-standard solution for modern ES Module projects in Node.js:
-
-1.  **`package.json` -> `imports`**: Defines path aliases for **Node.js at runtime**. This is the official, non-experimental standard.
-2.  **`jsconfig.json` -> `paths`**: Mirrors the `imports` to provide IntelliSense and autocompletion for the **developer in the code editor**.
-3.  **No Flags Needed**: The `node` command remains simple, and no experimental features are required.
-
-We have successfully built your application on this modern foundation. Now, let's complete the final file in our refactoring.
-
----
-
-### 🚀 Next Step
-
-Please provide the code for the last remaining file, `backend/src/core/srtParser.js`.
+  "dependencies": {
+    "@fastify/cors": "^9.0.1",
+    "@fastify/helmet": "^11.1.1",
+    "@fastify/healthcheck": "^4.4.0",
+    "@fastify/rate-limit": "^9.1.0",
+    "@google/generative-ai": "^0.12.0",
+    "@pinecone-database/pinecone": "^2.2.0",
+    "dotenv": "^16.4.5",
+    "fastify": "^4.27.0",
+    "mongodb": "^6.7.0",
+    "pino": "^9.1.0",
+    "srt-parser-2": "^1.1.7"
+  },
+  "devDependencies": {
+    "cross-env": "^7.0.3",
+    "eslint": "^8.57.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-prettier": "^5.1.3",
+    "nodemon": "^3.1.0",
+    "pino-pretty": "^11.1.0",
+    "prettier": "^3.3.1"
+  }
+}
