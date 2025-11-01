@@ -1,11 +1,39 @@
-// UPDATED IMPORTS using the '#' alias system
+// ===== IMPORTS & DEPENDENCIES =====
 import { callGemini } from '#lib/geminiClient.js';
 import { toSrtPromptFormat } from '#core/srtParser.js';
+
+// ===== UTILITY FUNCTIONS =====
+
+/**
+ * Safely parses and validates JSON responses from an LLM agent.
+ * LLMs can sometimes return malformed JSON or wrap it in markdown.
+ * @param {string} responseText The raw text response from the Gemini API.
+ * @param {string} agentName The name of the agent for clear error logging.
+ * @returns {object} The parsed JSON object.
+ * @throws {Error} If JSON parsing or validation fails.
+ */
+function parseJsonAgentResponse(responseText, agentName) {
+  try {
+    // Attempt to clean the response by removing markdown fences and leading/trailing whitespace.
+    const cleanedText = responseText.trim().replace(/^```json\n?/, '').replace(/\n?```$/, '');
+    return JSON.parse(cleanedText);
+  } catch (error) {
+    // Throw a more informative error for easier debugging.
+    const newError = new Error(`Agent [${agentName}] returned malformed JSON.`);
+    newError.cause = {
+      originalError: error,
+      responseText: responseText, // Include the raw response in the error!
+    };
+    throw newError;
+  }
+}
 
 // ===== BLUEPRINT GENERATION AGENTS (PHASE 1) =====
 
 /**
  * Agent 1: Extracts key terms, jargon, and entities from the source text.
+ * @param {string} text The source text to analyze.
+ * @returns {Promise<object>} The parsed JSON object with keywords.
  */
 export async function agent_extractKeywords(text) {
   const prompt = `You are a Lexical Analyst. Your only task is to extract technical terms, specialist jargon, named entities, and culturally specific idioms from the text.
@@ -19,11 +47,13 @@ ${text}
 
 Produce the JSON output.`;
   const response = await callGemini(prompt, true); // Expect JSON
-  return JSON.parse(response);
+  return parseJsonAgentResponse(response, 'extractKeywords');
 }
 
 /**
  * Agent 2: Finds high-quality Persian translations for the extracted keywords.
+ * @param {object[]} keywords The array of keyword objects from the previous agent.
+ * @returns {Promise<object>} The parsed JSON object with grounded keywords.
  */
 export async function agent_groundTranslations(keywords) {
   const prompt = `You are a professional Lexicographer. For each English term provided, find at least 3 high-quality, distinct Persian translations.
@@ -37,11 +67,15 @@ ${JSON.stringify(keywords, null, 2)}
 
 Produce the JSON output.`;
   const response = await callGemini(prompt, true); // Expect JSON
-  return JSON.parse(response);
+  return parseJsonAgentResponse(response, 'groundTranslations');
 }
 
 /**
  * Agent 3: Synthesizes all analysis into the final, comprehensive blueprint.
+ * @param {string} text The full source text.
+ * @param {string} tone The desired tone for the translation.
+ * @param {object[]} groundedKeywords The keywords with translation candidates.
+ * @returns {Promise<object>} The complete blueprint JSON object.
  */
 export async function agent_assembleBlueprint(text, tone, groundedKeywords) {
   const prompt = `You are a Pre-production Strategist. Generate a "Translation Blueprint" JSON object based on the provided script, tone, and pre-verified keywords. This blueprint is the single source of truth for the translation team. Your analysis must be meticulous.
@@ -64,7 +98,7 @@ ${text}
 
 Produce the complete Translation Blueprint JSON.`;
   const response = await callGemini(prompt, true); // Expect JSON
-  return JSON.parse(response);
+  return parseJsonAgentResponse(response, 'assembleBlueprint');
 }
 
 
