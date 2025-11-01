@@ -46,7 +46,7 @@ ${text}
 ---
 
 Produce the JSON output.`;
-  const response = await callGemini(prompt, true); // Expect JSON
+  const response = await callGemini(prompt, { modelName: 'gemini-2.5-pro-latest', expectJson: true });
   return parseJsonAgentResponse(response, 'extractKeywords');
 }
 
@@ -66,7 +66,7 @@ ${JSON.stringify(keywords, null, 2)}
 ---
 
 Produce the JSON output.`;
-  const response = await callGemini(prompt, true); // Expect JSON
+  const response = await callGemini(prompt, { modelName: 'gemini-2.5-pro-latest', expectJson: true });
   return parseJsonAgentResponse(response, 'groundTranslations');
 }
 
@@ -97,7 +97,7 @@ ${text}
 ---
 
 Produce the complete Translation Blueprint JSON.`;
-  const response = await callGemini(prompt, true); // Expect JSON
+  const response = await callGemini(prompt, { modelName: 'gemini-2.5-pro-latest', expectJson: true });
   return parseJsonAgentResponse(response, 'assembleBlueprint');
 }
 
@@ -119,7 +119,7 @@ BATCH TO TRANSLATE (Format: "Sequence | Text"):
 ${batchSrt}
 ---
 Provide ONLY the translated text, one subtitle per line.`;
-  return await callGemini(prompt);
+  return await callGemini(prompt, { modelName: 'gemini-2.5-pro-latest' });
 }
 
 /**
@@ -138,7 +138,7 @@ INITIAL TRANSLATION (to be edited):
 ${initialTranslation}
 ---
 Provide ONLY the edited and improved Persian text, one subtitle per line.`;
-  return await callGemini(prompt);
+  return await callGemini(prompt, { modelName: 'gemini-2.5-pro-latest' });
 }
 
 /**
@@ -157,7 +157,7 @@ EDITED TRANSLATION (to be reviewed):
 ${editedTranslation}
 ---
 Provide ONLY the final, approved Persian text, one subtitle per line.`;
-  return await callGemini(prompt);
+  return await callGemini(prompt, { modelName: 'gemini-2.5-pro-latest' });
 }
 
 /**
@@ -174,7 +174,7 @@ export async function agent_phantomSync(batch, qaTranslation) {
   const prompt = `You are "Phantom Sync™", a subtitle Pacing & Readability Analyst. Adjust translated Persian lines that are too long for their on-screen duration by rewriting them to be more concise while preserving 100% of the original meaning.
 **Rules:**
 1.  Analyze each line's reading pace (Characters Per Second). The professional threshold for Persian is ~22 CPS.
-2.  If a line is too fast (> 22 CPS), rewrite it to be shorter. Append the annotation: \`[PS Sync: Compressed from "original longer translation" for readability.]\`.
+2.  If a line is too long (> 22 CPS), rewrite it to be shorter. Append the annotation: \`[PS Sync: Compressed from "original longer translation" for readability.]\`.
 3.  If a line's pace is acceptable, return it exactly as is.
 4.  The number of output lines MUST exactly match the number of input lines.
 
@@ -183,5 +183,5 @@ export async function agent_phantomSync(batch, qaTranslation) {
 ${promptData}
 ---
 Provide the final, sync-checked Persian subtitle text. Output ONLY the text, with one subtitle line per line, including any required [PS Sync: ...] annotations.`;
-  return await callGemini(prompt);
-}
+  return await callGemini(prompt, { modelName: 'gemini-2.5-flash-latest' });
+} 
