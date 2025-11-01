@@ -8,7 +8,7 @@ import rateLimit from '@fastify/rate-limit';
 // THE FIX: The line below has been DELETED.
 // import healthcheck from '@fastify/healthcheck'; // <-- DELETE THIS LINE
 import config from '#config';
-import translationRoutes from './features/translation/controller.js';
+import translationRoutes from '#features/translation/controller.js';
 
 /**
  * Builds and configures the Fastify server instance.
