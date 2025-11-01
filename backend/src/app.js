@@ -39,9 +39,13 @@ export async function buildServer(logger) {
     timeWindow: config.RATE_LIMIT_WINDOW_MS,
   });
 
-  // ===== HEALTH CHECK ENDPOINT =====
-  // Provides a `/health` endpoint that cloud platforms like Render use to verify service health.
-  await server.register(healthcheck);
+  // Manually implement the health check route.
+// This removes the problematic dependency while providing the same functionality.
+server.get('/health', async (request, reply) => {
+  // In a more advanced setup, you could check database connections here.
+  // For now, returning a simple 200 OK is all Render needs.
+  return { status: 'ok' };
+});
 
   // ===== GLOBAL ERROR HANDLER =====
   // Catches any unhandled errors, ensuring a consistent response and preventing stack trace leaks.
