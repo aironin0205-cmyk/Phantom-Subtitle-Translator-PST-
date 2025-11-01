@@ -1,23 +1,20 @@
-// ===== PRODUCTION-READY MONGO CLIENT (MANAGED SINGLETON) =====
-// This module manages a single, persistent connection to MongoDB.
-// It ensures the connection is established on startup, can be shared across
-// the application, and is closed gracefully on shutdown.
+// ===== DEVELOPMENT/DEBUG MONGO CLIENT (MANAGED SINGLETON) =====
+// This module is refactored to include a live health check, more robust connection logic,
+// and better integration with our application's custom error system.
 
 // ===== IMPORTS & DEPENDENCIES =====
 import { MongoClient } from 'mongodb';
-import config from '#config'; // Use our centralized, validated config.
+import config from '#config';
+import { ServiceUnavailableError } from '../utils/errors.js'; // Import our custom error
 
 // ===== MODULE-LEVEL CLIENT STATE =====
-// These variables hold the singleton instances for the client and the database.
-// They are defined at the module level to be accessible by all exported functions.
 let client;
 let dbInstance;
 
-// ===== CONNECTION LOGIC =====
+// ===== CONNECTION & HEALTH CHECK LOGIC =====
 /**
- * Establishes a connection to the MongoDB server.
- * This function is idempotent; it will not create a new connection if one already exists.
- * It initializes the singleton client and dbInstance.
+ * Establishes a connection to the MongoDB server and a specific database.
+ * This function is idempotent and includes explicit validation of the connection URI.
  * @param {object} logger - The Pino logger instance.
  */
 export async function connectToMongo(logger) {
@@ -28,42 +25,54 @@ export async function connectToMongo(logger) {
 
   try {
     logger.info('Initializing MongoDB client and connecting...');
-    
-    // Initialize the client with the URI from our central config.
-    // The validation for MONGO_URI is now handled in the config module.
-    client = new MongoClient(config.MONGO_URI);
+
+    // --- Hardened Connection Logic ---
+    // We now explicitly parse the DB name from the URI to prevent accidental connections
+    // to the wrong database (e.g., the default 'test' db).
+    const url = new URL(config.MONGO_URI);
+    const dbName = url.pathname.slice(1); // Remove leading '/'
+
+    if (!dbName) {
+      // This is a configuration error and is fatal.
+      logger.fatal('Fatal Error: MONGO_URI must include a database name (e.g., mongodb://.../myDatabase).');
+      process.exit(1);
+    }
+    // --- End Hardened Logic ---
+
+    client = new MongoClient(config.MONGO_URI, {
+      // Recommended options for modern MongoDB drivers
+      appName: 'pst-backend',
+      connectTimeoutMS: 5000,
+      serverSelectionTimeoutMS: 5000,
+    });
 
     await client.connect();
-    
-    // The client.db() method without arguments uses the default database
-    // specified in the connection string URI.
-    dbInstance = client.db(); 
-    
-    logger.info('Successfully connected to MongoDB.');
+
+    // Explicitly connect to the parsed database name.
+    dbInstance = client.db(dbName);
+    logger.info(`Successfully connected to MongoDB database: "${dbName}".`);
+
   } catch (err) {
     logger.fatal({ err }, 'Fatal Error: Failed to connect to MongoDB.');
-    // A failed database connection is a critical error; the application cannot run without it.
     process.exit(1);
   }
 }
 
 /**
  * Provides access to the established database instance.
- * This is the "public API" for other parts of the application (e.g., repositories)
- * to interact with the database.
  * @returns {import('mongodb').Db} The MongoDB database instance.
- * @throws {Error} If the database connection has not been established yet.
+ * @throws {ServiceUnavailableError} If the database connection has not been established.
  */
 export function getDb() {
   if (!dbInstance) {
-    throw new Error('Database not connected. Ensure connectToMongo() is called successfully on application startup.');
+    // Using a specific error type allows for more intelligent error handling upstream.
+    throw new ServiceUnavailableError('Database not connected. Ensure connectToMongo() is called on startup.');
   }
   return dbInstance;
 }
 
 /**
- * Closes the MongoDB connection.
- * This function is essential for the graceful shutdown process.
+ * Closes the MongoDB connection during graceful shutdown.
  * @param {object} logger - The Pino logger instance.
  */
 export async function closeMongoConnection(logger) {
@@ -77,5 +86,26 @@ export async function closeMongoConnection(logger) {
     }
   } else {
     logger.warn('Attempted to close MongoDB connection, but no client was initialized.');
+  }
+}
+
+/**
+ * Performs a live health check on the MongoDB connection.
+ * This is used by the /health endpoint to verify dependency status.
+ * @returns {Promise<{name: string, isHealthy: boolean, message: string}>}
+ */
+export async function getMongoStatus() {
+  if (!client || !dbInstance) {
+    return { name: 'MongoDB', isHealthy: false, message: 'Client not initialized.' };
+  }
+
+  try {
+    // The 'ping' command is a lightweight, standard way to check server responsiveness.
+    await dbInstance.admin().command({ ping: 1 });
+    return { name: 'MongoDB', isHealthy: true, message: 'Connection healthy.' };
+  } catch (error) {
+    // The health check should not log errors itself, but report the failure state.
+    // The calling service (app.js) will log the full health report.
+    return { name: 'MongoDB', isHealthy: false, message: error.message };
   }
 }
