@@ -1,10 +1,9 @@
 // ===== PRODUCTION-READY TRANSLATION ORCHESTRATOR =====
 // This class contains the core business logic for the translation feature.
-// It orchestrates calls to various agents and the data repository to perform complex tasks.
+// It orchestrates calls to the AgentService and the Repository.
 
 // ===== IMPORTS & DEPENDENCIES =====
-import * as agents from './agents.js';
-import { parseSrt, toSrtString } from '#core/srtParser.js';
+import { parseSrt } from '#core/srtParser.js';
 
 // ===== CORE BUSINESS LOGIC =====
 /**
@@ -13,15 +12,14 @@ import { parseSrt, toSrtString } from '#core/srtParser.js';
 export class TranslationOrchestrator {
   /**
    * @param {object} dependencies - The dependencies for this orchestrator.
-   * @param {import('./repository.js').TranslationRepository} dependencies.repository - The data access layer.
-   * @param {object} dependencies.logger - The Pino logger instance.
+   * @param {import('./repository.js').TranslationRepository} dependencies.repository
+   * @param {import('./agents.js').AgentService} dependencies.agentService
+   * @param {object} dependencies.logger
    */
-  constructor({ repository, logger }) {
+  constructor({ repository, agentService, logger }) {
     this.repository = repository;
+    this.agentService = agentService;
     this.logger = logger;
-    // Note: For even more advanced DI, the agents could also be injected.
-    // For now, importing them directly is a reasonable approach.
-    this.agents = agents;
   }
 
   /**
@@ -33,7 +31,6 @@ export class TranslationOrchestrator {
   async generateTranslationBlueprint(subtitleContent, settings) {
     this.logger.info("--- Orchestrator: Starting Stateful Blueprint Generation ---");
 
-    this.logger.info("Creating translation job record...");
     const jobResult = await this.repository.createJob({ subtitleContent, settings });
     const jobId = jobResult.insertedId.toString();
     this.logger.info({ jobId }, "Translation job record created successfully.");
@@ -41,24 +38,19 @@ export class TranslationOrchestrator {
     const isSrtMode = subtitleContent.includes('-->');
     const textToAnalyze = isSrtMode 
       ? parseSrt(subtitleContent).map(line => line.text).join('\n')
+      // NOTE: Consider adding a max character limit check for plain text to prevent huge API calls.
       : subtitleContent;
 
-    const { keywords } = await this.agents.agent_extractKeywords(textToAnalyze);
-    if (!keywords || !Array.isArray(keywords)) {
-      throw new Error("Agent 1 (Extract Keywords) returned invalid data.");
-    }
+    // Use the injected agentService for the agent chain
+    const { keywords } = await this.agentService.extractKeywords(textToAnalyze);
+    if (!keywords) throw new Error("Agent [extractKeywords] failed to return data.");
 
-    const { grounded_keywords } = await this.agents.agent_groundTranslations(keywords);
-    if (!grounded_keywords || !Array.isArray(grounded_keywords)) {
-      throw new Error("Agent 2 (Ground Translations) returned invalid data.");
-    }
+    const { grounded_keywords } = await this.agentService.groundTranslations(keywords);
+    if (!grounded_keywords) throw new Error("Agent [groundTranslations] failed to return data.");
 
-    const blueprint = await this.agents.agent_assembleBlueprint(textToAnalyze, settings.tone, grounded_keywords);
-    if (!blueprint) {
-      throw new Error("Agent 3 (Assemble Blueprint) returned invalid data.");
-    }
+    const blueprint = await this.agentService.assembleBlueprint(textToAnalyze, settings.tone, grounded_keywords);
+    if (!blueprint) throw new Error("Agent [assembleBlueprint] failed to return data.");
     
-    this.logger.info({ jobId }, "Saving generated blueprint to database...");
     await this.repository.saveBlueprint(jobId, blueprint);
     this.logger.info({ jobId }, "Blueprint saved successfully.");
 
@@ -83,37 +75,52 @@ export class TranslationOrchestrator {
   async executeTranslationChain(jobId, confirmedBlueprint, settings) {
     this.logger.info({ jobId }, "--- Orchestrator: Starting Stateful Translation Chain ---");
 
-    // --- Step 1: Fetch original job data ---
-    // Note: This requires a new method in our repository.
-    // We'll add this in the next step.
     const job = await this.repository.getJobById(jobId);
     if (!job) {
       this.logger.error({ jobId }, "executeTranslationChain failed: Job not found.");
-      throw new Error(`Job with ID ${jobId} not found.`); // Or a custom NotFoundError
+      // In a real app, you might throw a specific NotFoundError class
+      throw new Error(`Job with ID ${jobId} not found.`);
     }
     
     const srtLines = parseSrt(job.subtitleContent);
-    
-    // --- Step 2: Batch processing logic ---
+    const LINES_PER_BATCH = 25; // This could also be moved to config
     const batches = [];
-    const LINES_PER_BATCH = 25; // This could be moved to config
     for (let i = 0; i < srtLines.length; i += LINES_PER_BATCH) {
         batches.push(srtLines.slice(i, i + LINES_PER_BATCH));
     }
     
-    // Placeholder for the full translation chain which would iterate through batches,
-    // calling transcreate, edit, and qa agents.
-    this.logger.info({ jobId, batchCount: batches.length }, "Beginning batch processing (placeholder).");
+    this.logger.info({ jobId, batchCount: batches.length }, "Beginning batch processing.");
     
-    // As a placeholder, we'll create a dummy result.
-    const finalResult = { 
-        finalSrt: "Translation complete (full chain placeholder).", 
-        syncSuggestions: [] 
-    };
+    // This is a simplified sequential chain. A more advanced implementation might run batches in parallel.
+    let translatedLines = [];
+    let previousContext = "This is the beginning of the script.";
+
+    for (const batch of batches) {
+      // The full agent chain per batch
+      const transcreated = await this.agentService.transcreateBatch(batch, previousContext, confirmedBlueprint, settings.tone);
+      const edited = await this.agentService.editBatch(batch, transcreated, confirmedBlueprint, settings.tone);
+      const qa_approved = await this.agentService.qaBatch(batch, edited, confirmedBlueprint, settings.tone);
+      const final_batch = await this.agentService.phantomSync(batch, qa_approved);
+
+      const finalLines = final_batch.split('\n');
+      translatedLines.push(...finalLines);
+
+      // Update context for the next batch
+      previousContext = `The last few lines were: "${finalLines.slice(-2).join(' ')}"`;
+    }
     
-    await this.repository.saveFinalSrt(jobId, finalResult.finalSrt);
+    // Reassemble the final SRT
+    const finalSrtObject = srtLines.map((line, index) => ({
+      ...line,
+      text: translatedLines[index] || line.text, // Fallback to original if something went wrong
+    }));
+    
+    const finalSrtString = toSrtString(finalSrtObject);
+    
+    await this.repository.saveFinalSrt(jobId, finalSrtString);
     this.logger.info({ jobId }, "Final SRT saved to job record.");
     
-    return finalResult;
+    // In the future, you could extract sync suggestions here to return to the user.
+    return { finalSrt: finalSrtString, syncSuggestions: [] };
   }
 }
